@@ -1,0 +1,148 @@
+from meshlib import mrmeshpy as meshpy
+from meshlib import mrmeshnumpy as mn
+import numpy as np
+import plotly.graph_objects as go
+import tkinter as tk
+import pymeshlab as mp
+from sklearn.decomposition import PCA
+import pyvista as pv
+
+global mesh1
+global mesh2
+global mesh2_aligned
+
+
+def method1():
+    file1 = list(open("E:/PYTHON/CE3E3V2_SCAR.gcode", "r"))
+    file2 = list(open("E:/PYTHON/CE3E3V2_SCAR2.gcode", "r"))
+    ## gcode is stored in line style of "command x coordinate y coordinate E coordinate"
+    ## which means it can be read in as a tuple and then stored in a list
+    ## this is then compared line for line with every identical line counting as a percent out of 100
+
+    percent = (100 / (len(file1)))
+    comparison = 0
+    for i in range(0, len(file1)):
+        if file1[i] == file2[i]:
+            comparison = comparison + percent
+
+    print("model comparison:", int(comparison), "%")
+
+##hausdorff method
+## the hausdorff distance measures the longest distance from a point of one of the objects to
+## the closest point on the other objects.
+## two possible methods are:
+## one in point is in a vertex of one mesh and the closes point is on triangle of the other mesh
+## both pints are situated inside edges of the corresponding meshes.(ignored for peformance issues)
+
+def loadmeshes():
+
+    try:
+        mesh1 = meshpy.loadMesh("E:/PYTHON/Pipe.stl")
+        mesh2 = meshpy.loadMesh("E:/PYTHON/SCAR.stl")
+    except ValueError as e:
+        print(e)
+    meshpy.saveMesh(mesh1, "mesh1.ply")
+    meshpy.saveMesh(mesh2, "mesh2.ply")
+    return mesh1, mesh2
+
+
+def plotmesh():
+    align_meshes()
+    verts1 = mn.getNumpyVerts(mesh1)
+    verts2 = mn.getNumpyVerts(mesh2_aligned)
+
+    faces1 = mn.getNumpyFaces(mesh1.topology)
+    faces2 = mn.getNumpyFaces(mesh2.topology)
+
+    verts1_t = np.transpose(verts1)
+    verts2_t = np.transpose(verts2)
+    faces1_t = np.transpose(faces1)
+    faces2_t = np.transpose(faces2)
+
+    fig = go.Figure(data=[
+        go.Mesh3d(
+            x = verts1_t[0],
+            y = verts1_t[1],
+            z = verts1_t[2],
+            i = faces1_t[0],
+            j = faces1_t[1],
+            k = faces1_t[2]
+        )
+    ])
+
+
+
+def hausdorff():
+    ms = mp.MeshSet()
+    ms.load_new_mesh("E:/PYTHON/SCAR.stl")
+    ms.load_new_mesh("E:/PYTHON/SCAR.stl")
+    res_dict = ms.get_hausdorff_distance(targetmesh = 1, sampledmesh=0,sampleface = True, sampleedge = True, samplenum = 1000)
+    print(res_dict)
+
+
+
+
+
+def button_clicked():
+    align_meshes()
+
+#############################################################################################################
+## machine learning integration using sklearn
+
+## mesh alignment using principal component analysis to find model rotation matrix.
+
+def align_meshes():
+    mesh1 = pv.read("E:/PYTHON/Pipe.stl")
+    mesh2 = pv.read("E:/PYTHON/SCAR.stl")
+
+    points1 = mesh1.points
+    points2 = mesh2.points
+
+    centroid1 = np.mean(points1, axis = 0)
+    centroid2 = np.mean(points2, axis = 0)
+
+    points1_centered = points1 - centroid1
+    points2_centered = points2 - centroid2
+
+    pca1 = PCA().fit(points1_centered)
+    pca2 = PCA().fit(points2_centered)
+
+    rotation_matrix = np.dot(pca1.components_.T, pca2.components_)
+
+    points2_aligned = np.dot(points2_centered, rotation_matrix) + centroid1
+
+    mesh2_aligned = pv.PolyData(points2_aligned, mesh2.faces)
+
+    print(points1,"\n")
+    print(points2)
+    return mesh2_aligned, mesh1
+
+root = tk.Tk()
+
+button = tk.Button(root,
+                   text="Click Me",
+                   command=button_clicked,
+                   activebackground="blue",
+                   activeforeground="white",
+                   anchor="center",
+                   bd=3,
+                   bg="lightgray",
+                   cursor="hand2",
+                   disabledforeground="gray",
+                   fg="black",
+                   font=("Arial", 12),
+                   height=2,
+                   highlightbackground="black",
+                   highlightcolor="green",
+                   highlightthickness=2,
+                   justify="center",
+                   overrelief="raised",
+                   padx=10,
+                   pady=5,
+                   width=15,
+                   wraplength=100)
+
+button.pack(padx=20, pady=20)
+
+root.mainloop()
+
